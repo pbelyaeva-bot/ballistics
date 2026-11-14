@@ -1,4 +1,6 @@
-from scipy.optimize import minimize_scalar, solve_ivp
+import numpy as np
+from scipy.integrate import solve_ivp
+from scipy.optimize import minimize_scalar
 
 import numpy as np
 from scipy.integrate import solve_ivp
