@@ -1,5 +1,7 @@
 import pytest
 
+from ballistics.physics import analytical_vacuum, find_optimal_angle, simulate, simulate_ivp
+
 from ballistics.physics import analytical_vacuum, simulate, simulate_ivp
 
 
@@ -66,3 +68,10 @@ def test_rk4_convergence_order():
     errors = [abs(simulate(**params, dt=dt)["range"] - exact_range) for dt in dts]
 
     assert all(errors[i + 1] < errors[i] for i in range(len(errors) - 1))
+def test_optimal_angle_vacuum_and_drag():
+    vac = find_optimal_angle(v0=45.0, h0=0.0, use_drag=False)
+    assert vac["optimal_angle"] == pytest.approx(45.0, abs=0.2)
+
+    drag = find_optimal_angle(v0=45.0, h0=0.0, cd=0.35, use_drag=True)
+    assert 25.0 < drag["optimal_angle"] < 44.0
+    assert drag["max_range"] < vac["max_range"]

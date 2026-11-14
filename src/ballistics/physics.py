@@ -1,3 +1,5 @@
+from scipy.optimize import minimize_scalar, solve_ivp
+
 import numpy as np
 from scipy.integrate import solve_ivp
 
@@ -155,4 +157,51 @@ def simulate_ivp(
         "max_height": float(np.max(y)),
         "impact_speed": impact_speed,
         "impact_angle": impact_angle,
+    }
+def find_optimal_angle(
+    v0,
+    h0=0.0,
+    mass=0.145,
+    cd=0.35,
+    area=0.0043,
+    rho=1.225,
+    g=9.81,
+    use_drag=True,
+    dt=0.01,
+):
+    """Находит угол броска, обеспечивающий максимальную дальность полёта."""
+
+    def neg_range(angle_deg):
+        res = simulate(
+            v0=v0,
+            angle=float(angle_deg),
+            h0=h0,
+            mass=mass,
+            cd=cd,
+            area=area,
+            rho=rho,
+            g=g,
+            use_drag=use_drag,
+            dt=dt,
+        )
+        return -res["range"]
+
+    opt = minimize_scalar(neg_range, bounds=(1.0, 89.0), method="bounded")
+    best_angle = float(opt.x)
+    best_traj = simulate(
+        v0=v0,
+        angle=best_angle,
+        h0=h0,
+        mass=mass,
+        cd=cd,
+        area=area,
+        rho=rho,
+        g=g,
+        use_drag=use_drag,
+        dt=dt,
+    )
+    return {
+        "optimal_angle": best_angle,
+        "max_range": best_traj["range"],
+        "time": best_traj["time"],
     }
