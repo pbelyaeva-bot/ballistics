@@ -2,9 +2,6 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.optimize import minimize_scalar
 
-import numpy as np
-from scipy.integrate import solve_ivp
-
 
 def derivative(state, g, use_drag, k_drag):
     vx = state[2]
@@ -45,14 +42,10 @@ def analytical_vacuum(v0, angle, h0=0.0, g=9.81):
     }
 
 
-def simulate(
-    v0, angle, h0, mass, cd, area, rho, g, use_drag, dt=0.005, max_time=300.0
-):
+def simulate(v0, angle, h0, mass, cd, area, rho, g, use_drag, dt=0.005, max_time=300.0):
     """Численное интегрирование траектории методом Рунге-Кутты 4 порядка."""
     angle_rad = np.radians(angle)
-    state = np.array(
-        [0.0, h0, v0 * np.cos(angle_rad), v0 * np.sin(angle_rad)], dtype=float
-    )
+    state = np.array([0.0, h0, v0 * np.cos(angle_rad), v0 * np.sin(angle_rad)], dtype=float)
 
     k_drag = 0.0
     if use_drag and mass > 0.0:
@@ -111,14 +104,10 @@ def simulate(
     }
 
 
-def simulate_ivp(
-    v0, angle, h0, mass, cd, area, rho, g, use_drag, max_time=300.0
-):
+def simulate_ivp(v0, angle, h0, mass, cd, area, rho, g, use_drag, max_time=300.0):
     """Интегрирование через scipy.integrate.solve_ivp с событием касания земли."""
     angle_rad = np.radians(angle)
-    y0 = np.array(
-        [0.0, h0, v0 * np.cos(angle_rad), v0 * np.sin(angle_rad)], dtype=float
-    )
+    y0 = np.array([0.0, h0, v0 * np.cos(angle_rad), v0 * np.sin(angle_rad)], dtype=float)
 
     k_drag = 0.0
     if use_drag and mass > 0.0:
@@ -160,6 +149,8 @@ def simulate_ivp(
         "impact_speed": impact_speed,
         "impact_angle": impact_angle,
     }
+
+
 def find_optimal_angle(
     v0,
     h0=0.0,

@@ -1,8 +1,11 @@
 import pytest
 
-from ballistics.physics import analytical_vacuum, find_optimal_angle, simulate, simulate_ivp
-
-from ballistics.physics import analytical_vacuum, simulate, simulate_ivp
+from ballistics.physics import (
+    analytical_vacuum,
+    find_optimal_angle,
+    simulate,
+    simulate_ivp,
+)
 
 
 def test_vacuum_matches_analytical():
@@ -17,9 +20,7 @@ def test_vacuum_matches_analytical():
         g=9.81,
         use_drag=False,
     )
-    exact = analytical_vacuum(
-        v0=params["v0"], angle=params["angle"], h0=params["h0"], g=params["g"]
-    )
+    exact = analytical_vacuum(v0=params["v0"], angle=params["angle"], h0=params["h0"], g=params["g"])
     rk4_res = simulate(**params, dt=0.001)
     ivp_res = simulate_ivp(**params)
 
@@ -68,6 +69,8 @@ def test_rk4_convergence_order():
     errors = [abs(simulate(**params, dt=dt)["range"] - exact_range) for dt in dts]
 
     assert all(errors[i + 1] < errors[i] for i in range(len(errors) - 1))
+
+
 def test_optimal_angle_vacuum_and_drag():
     vac = find_optimal_angle(v0=45.0, h0=0.0, use_drag=False)
     assert vac["optimal_angle"] == pytest.approx(45.0, abs=0.2)

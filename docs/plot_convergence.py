@@ -26,9 +26,7 @@ def main():
 
     dts = np.array([0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002])
     errors_drag = [abs(simulate(**params, dt=dt)["range"] - ref_range) for dt in dts]
-    errors_vac = [
-        abs(simulate(**vac_params, dt=dt)["range"] - exact_vac_range) for dt in dts
-    ]
+    errors_vac = [abs(simulate(**vac_params, dt=dt)["range"] - exact_vac_range) for dt in dts]
 
     plt.figure(figsize=(8, 5))
     plt.loglog(dts, errors_vac, "o-", label="RK4 vs Аналитика (вакуум)")

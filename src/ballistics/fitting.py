@@ -10,9 +10,7 @@ from ballistics.statcast import (
 )
 
 
-def split_train_test(
-    df: pd.DataFrame, train_ratio: float = 0.8
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+def split_train_test(df: pd.DataFrame, train_ratio: float = 0.8) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Разделяет выборку на обучающую и тестовую части (по порядку матчей)."""
     split_idx = int(len(df) * train_ratio)
     if split_idx <= 0 or split_idx >= len(df):
@@ -78,9 +76,7 @@ def fit_cd(
 
     def residuals(params):
         cd_val = float(params[0])
-        pred = predict_ranges(
-            train_df, cd=cd_val, h0=h0, mass=mass, area=area, rho=rho, g=g, dt=dt
-        )
+        pred = predict_ranges(train_df, cd=cd_val, h0=h0, mass=mass, area=area, rho=rho, g=g, dt=dt)
         return pred - actual
 
     result = least_squares(
@@ -92,9 +88,7 @@ def fit_cd(
     )
 
     best_cd = float(result.x[0])
-    train_preds = predict_ranges(
-        train_df, cd=best_cd, h0=h0, mass=mass, area=area, rho=rho, g=g, dt=dt
-    )
+    train_preds = predict_ranges(train_df, cd=best_cd, h0=h0, mass=mass, area=area, rho=rho, g=g, dt=dt)
     train_metrics = compute_error_metrics(actual, train_preds)
 
     return {

@@ -1,11 +1,11 @@
 from pathlib import Path
 
 import pandas as pd
-from pybaseball import cache, statcast
+from pybaseball import statcast
 
 # Константы перевода в СИ
-MPH_TO_MS = 0.44704   # 1 миля в час = 0.44704 м/с
-FT_TO_M = 0.3048      # 1 фут = 0.3048 м
+MPH_TO_MS = 0.44704  # 1 миля в час = 0.44704 м/с
+FT_TO_M = 0.3048  # 1 фут = 0.3048 м
 
 # Физические параметры стандартного бейсбольного мяча (MLB)
 BASEBALL_MASS_KG = 0.145
