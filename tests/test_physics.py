@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from ballistics.physics import (
@@ -20,12 +21,14 @@ def test_vacuum_matches_analytical():
         g=9.81,
         use_drag=False,
     )
-    exact = analytical_vacuum(v0=params["v0"], angle=params["angle"], h0=params["h0"], g=params["g"])
+    exact = analytical_vacuum(
+        v0=params["v0"], angle=params["angle"], h0=params["h0"], g=params["g"]
+    )
     rk4_res = simulate(**params, dt=0.001)
     ivp_res = simulate_ivp(**params)
 
-    assert rk4_res["range"] == pytest.approx(exact["range"], rel=1e-5)
-    assert rk4_res["time"] == pytest.approx(exact["time"], rel=1e-5)
+    assert rk4_res["range"] == pytest.approx(exact["range"], rel=1e-7)
+    assert rk4_res["time"] == pytest.approx(exact["time"], rel=1e-7)
     assert rk4_res["max_height"] == pytest.approx(exact["max_height"], rel=1e-4)
 
     assert ivp_res["range"] == pytest.approx(exact["range"], rel=1e-7)
@@ -47,28 +50,30 @@ def test_drag_rk4_matches_solve_ivp():
     rk4_res = simulate(**params, dt=0.001)
     ivp_res = simulate_ivp(**params)
 
-    assert rk4_res["range"] == pytest.approx(ivp_res["range"], rel=1e-4)
-    assert rk4_res["time"] == pytest.approx(ivp_res["time"], rel=1e-4)
-    assert rk4_res["impact_speed"] == pytest.approx(ivp_res["impact_speed"], rel=1e-4)
+    assert rk4_res["range"] == pytest.approx(ivp_res["range"], rel=1e-6)
+    assert rk4_res["time"] == pytest.approx(ivp_res["time"], rel=1e-6)
+    assert rk4_res["impact_speed"] == pytest.approx(ivp_res["impact_speed"], rel=1e-6)
 
 
 def test_rk4_convergence_order():
     params = dict(
-        v0=40.0,
-        angle=40.0,
-        h0=0.0,
+        v0=45.0,
+        angle=35.0,
+        h0=1.0,
         mass=0.145,
-        cd=0.0,
+        cd=0.35,
         area=0.0043,
         rho=1.225,
         g=9.81,
-        use_drag=False,
+        use_drag=True,
     )
-    exact_range = analytical_vacuum(v0=40.0, angle=40.0, h0=0.0, g=9.81)["range"]
-    dts = [0.1, 0.05, 0.025, 0.0125]
-    errors = [abs(simulate(**params, dt=dt)["range"] - exact_range) for dt in dts]
+    ref_range = simulate_ivp(**params)["range"]
+    dts = np.array([0.2, 0.1, 0.05, 0.025])
+    errors = np.array([abs(simulate(**params, dt=dt)["range"] - ref_range) for dt in dts])
 
     assert all(errors[i + 1] < errors[i] for i in range(len(errors) - 1))
+    slope, _ = np.polyfit(np.log(dts), np.log(errors), 1)
+    assert slope > 3.8
 
 
 def test_optimal_angle_vacuum_and_drag():

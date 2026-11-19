@@ -24,15 +24,24 @@ def main():
         v0=vac_params["v0"], angle=vac_params["angle"], h0=0.0, g=vac_params["g"]
     )["range"]
 
-    dts = np.array([0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002])
-    errors_drag = [abs(simulate(**params, dt=dt)["range"] - ref_range) for dt in dts]
-    errors_vac = [abs(simulate(**vac_params, dt=dt)["range"] - exact_vac_range) for dt in dts]
+    dts = np.array([0.2, 0.1, 0.05, 0.025, 0.0125, 0.00625])
+    errors_drag = np.array([abs(simulate(**params, dt=dt)["range"] - ref_range) for dt in dts])
+    errors_vac = np.array(
+        [abs(simulate(**vac_params, dt=dt)["range"] - exact_vac_range) for dt in dts]
+    )
+
+    slope_drag, _ = np.polyfit(np.log(dts), np.log(errors_drag), 1)
 
     plt.figure(figsize=(8, 5))
     plt.loglog(dts, errors_vac, "o-", label="RK4 vs Аналитика (вакуум)")
-    plt.loglog(dts, errors_drag, "s-", label="RK4 vs solve_ivp (с сопротивлением)")
+    plt.loglog(
+        dts,
+        errors_drag,
+        "s-",
+        label=f"RK4 vs solve_ivp (с сопротивлением, наклон = {slope_drag:.2f})",
+    )
 
-    ref_line = errors_drag[0] * (dts / dts[0]) ** 4
+    ref_line = errors_drag * (dts / dts) ** 4
     plt.loglog(dts, ref_line, "--", color="gray", label="Теоретический наклон $O(dt^4)$")
 
     plt.xlabel("Шаг интегрирования dt, с")
@@ -42,7 +51,7 @@ def main():
     plt.legend()
     plt.tight_layout()
     plt.savefig("docs/convergence.png", dpi=150)
-    print("График сохранён в docs/convergence.png")
+    print(f"График сохранён в docs/convergence.png (порядок сходимости = {slope_drag:.2f})")
 
 
 if __name__ == "__main__":

@@ -4,8 +4,8 @@ from scipy.optimize import minimize_scalar
 
 
 def derivative(state, g, use_drag, k_drag):
-    vx = state[2]
-    vy = state[3]
+    vx = state
+    vy = state
 
     if use_drag and k_drag > 0.0:
         speed = np.hypot(vx, vy)
@@ -42,10 +42,46 @@ def analytical_vacuum(v0, angle, h0=0.0, g=9.81):
     }
 
 
-def simulate(v0, angle, h0, mass, cd, area, rho, g, use_drag, dt=0.005, max_time=300.0):
-    """Численное интегрирование траектории методом Рунге-Кутты 4 порядка."""
+def _cubic_hermite_root(y0, vy0, y1, vy1, dt):
+    """Находит долю шага s in, где кубический сплайн Эрмита y(s) = 0 (точность O(dt^4))."""
+    m0 = vy0 * dt
+    m1 = vy1 * dt
+
+    def y_hermite(s):
+        h00 = 2.0 * s**3 - 3.0 * s**2 + 1.0
+        h10 = s**3 - 2.0 * s**2 + s
+        h01 = -2.0 * s**3 + 3.0 * s**2
+        h11 = s**3 - s**2
+        return h00 * y0 + h10 * m0 + h01 * y1 + h11 * m1
+
+    lo, hi = 0.0, 1.0
+    for _ in range(40):
+        mid = 0.5 * (lo + hi)
+        if y_hermite(mid) > 0.0:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+def _cubic_hermite_interp(s0, ds0, s1, ds1, frac, dt):
+    """Интерполирует вектор состояния на доле шага frac с 4-м порядком точности."""
+    s = frac
+    h00 = 2.0 * s**3 - 3.0 * s**2 + 1.0
+    h10 = s**3 - 2.0 * s**2 + s
+    h01 = -2.0 * s**3 + 3.0 * s**2
+    h11 = s**3 - s**2
+    return h00 * s0 + h10 * (ds0 * dt) + h01 * s1 + h11 * (ds1 * dt)
+
+
+def simulate(
+    v0, angle, h0, mass, cd, area, rho, g, use_drag, dt=0.005, max_time=300.0
+):
+    """Численное интегрирование траектории методом Рунге-Кутты 4-го порядка (RK4)."""
     angle_rad = np.radians(angle)
-    state = np.array([0.0, h0, v0 * np.cos(angle_rad), v0 * np.sin(angle_rad)], dtype=float)
+    state = np.array(
+        [0.0, h0, v0 * np.cos(angle_rad), v0 * np.sin(angle_rad)], dtype=float
+    )
 
     k_drag = 0.0
     if use_drag and mass > 0.0:
@@ -56,7 +92,7 @@ def simulate(v0, angle, h0, mass, cd, area, rho, g, use_drag, dt=0.005, max_time
     times = [0.0]
 
     for _ in range(int(max_time / dt)):
-        if state[1] < 0.0:
+        if state < 0.0:
             break
 
         def f(s):
@@ -68,13 +104,14 @@ def simulate(v0, angle, h0, mass, cd, area, rho, g, use_drag, dt=0.005, max_time
         k4 = f(state + dt * k3)
         next_state = state + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
 
-        if next_state[1] <= 0.0 <= state[1]:
-            denom = state[1] - next_state[1]
-            frac = state[1] / denom if denom > 1e-15 else 0.0
-            frac = min(1.0, max(0.0, frac))
-
-            land_state = state + frac * (next_state - state)
-            land_state[1] = 0.0
+        if next_state <= 0.0 <= state:
+            frac = _cubic_hermite_root(
+                state, state, next_state, next_state, dt
+            )
+            land_state = _cubic_hermite_interp(
+                state, k1, next_state, f(next_state), frac, dt
+            )
+            land_state = 0.0
             states.append(land_state)
             times.append(t + frac * dt)
             break
@@ -104,10 +141,14 @@ def simulate(v0, angle, h0, mass, cd, area, rho, g, use_drag, dt=0.005, max_time
     }
 
 
-def simulate_ivp(v0, angle, h0, mass, cd, area, rho, g, use_drag, max_time=300.0):
+def simulate_ivp(
+    v0, angle, h0, mass, cd, area, rho, g, use_drag, max_time=300.0
+):
     """Интегрирование через scipy.integrate.solve_ivp с событием касания земли."""
     angle_rad = np.radians(angle)
-    y0 = np.array([0.0, h0, v0 * np.cos(angle_rad), v0 * np.sin(angle_rad)], dtype=float)
+    y0 = np.array(
+        [0.0, h0, v0 * np.cos(angle_rad), v0 * np.sin(angle_rad)], dtype=float
+    )
 
     k_drag = 0.0
     if use_drag and mass > 0.0:
@@ -117,7 +158,7 @@ def simulate_ivp(v0, angle, h0, mass, cd, area, rho, g, use_drag, max_time=300.0
         return derivative(state, g, use_drag, k_drag)
 
     def hit_ground(t, state):
-        return state[1]
+        return state
 
     hit_ground.terminal = True
     hit_ground.direction = -1
@@ -132,10 +173,10 @@ def simulate_ivp(v0, angle, h0, mass, cd, area, rho, g, use_drag, max_time=300.0
         atol=1e-11,
     )
 
-    x = sol.y[0]
-    y = np.maximum(0.0, sol.y[1])
-    vx = sol.y[2]
-    vy = sol.y[3]
+    x = sol.y
+    y = np.maximum(0.0, sol.y)
+    vx = sol.y
+    vy = sol.y
 
     impact_speed = float(np.hypot(vx[-1], vy[-1]))
     impact_angle = float(np.degrees(np.arctan2(vy[-1], vx[-1])))
@@ -162,7 +203,7 @@ def find_optimal_angle(
     use_drag=True,
     dt=0.01,
 ):
-    """Находит угол броска, обеспечивающий максимальную дальность полёта."""
+    """Находит угол броска (в градусах), обеспечивающий максимальную дальность полёта."""
 
     def neg_range(angle_deg):
         res = simulate(
