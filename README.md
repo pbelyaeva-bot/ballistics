@@ -8,8 +8,6 @@
 
 Движение материальной точки массой \(m\) в однородном поле тяжести с квадратичным аэродинамическим сопротивлением описывается системой ОДУ:
 
-\[\begin{cases} \dot{x} = v_x \\ \dot{y} = v_y \\ \dot{v}_x = -k \cdot \Vert{}v\Vert{} \cdot v_x \\ \dot{v}_y = -g - k \cdot \Vert{}v\Vert{} \cdot v_y \end{cases} \quad \text{где } k = \frac{\rho C_d A}{2m}, \quad \Vert{}v\Vert{} = \sqrt{v_x^2 + v_y^2}.\]
-
 * **Метод RK4 (`ballistics.physics.simulate`):** метод Рунге-Кутты 4-го порядка с фиксированным шагом `dt` и линейной интерполяцией момента касания земли (\(y = 0\)).
 * **Метод `solve_ivp` (`ballistics.physics.simulate_ivp`):** расчёт через `scipy.integrate.solve_ivp` с терминальным событием падения `hit_ground`.
 * **Верификация и сходимость:** расчёт в вакууме (\(C_d = 0\)) сверен с аналитическим решением (`analytical_vacuum`). В тесте `test_rk4_convergence_order` проверяется монотонное убывание ошибки при уменьшении шага `dt`, а скрипт `docs/plot_convergence.py` строит график сходимости в логарифмическом масштабе:
