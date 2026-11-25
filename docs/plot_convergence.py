@@ -41,7 +41,8 @@ def main():
         label=f"RK4 vs solve_ivp (с сопротивлением, наклон = {slope_drag:.2f})",
     )
 
-    ref_line = errors_drag * (dts / dts) ** 4
+    ref_line = float(np.min(errors_drag)) * (dts / float(np.min(dts))) ** 4
+
     plt.loglog(dts, ref_line, "--", color="gray", label="Теоретический наклон $O(dt^4)$")
 
     plt.xlabel("Шаг интегрирования dt, с")

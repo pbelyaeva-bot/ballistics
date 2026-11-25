@@ -4,8 +4,7 @@ from scipy.optimize import minimize_scalar
 
 
 def derivative(state, g, use_drag, k_drag):
-    vx = state
-    vy = state
+    _, _, vx, vy = state
 
     if use_drag and k_drag > 0.0:
         speed = np.hypot(vx, vy)
@@ -43,7 +42,7 @@ def analytical_vacuum(v0, angle, h0=0.0, g=9.81):
 
 
 def _cubic_hermite_root(y0, vy0, y1, vy1, dt):
-    """Находит долю шага s in, где кубический сплайн Эрмита y(s) = 0 (точность O(dt^4))."""
+    """Находит долю шага s in (0, 1), где кубический сплайн Эрмита y(s) = 0 (точность O(dt^4))."""
     m0 = vy0 * dt
     m1 = vy1 * dt
 
@@ -92,7 +91,8 @@ def simulate(
     times = [0.0]
 
     for _ in range(int(max_time / dt)):
-        if state < 0.0:
+        _, y_curr, _, vy_curr = state
+        if y_curr < 0.0:
             break
 
         def f(s):
@@ -104,15 +104,14 @@ def simulate(
         k4 = f(state + dt * k3)
         next_state = state + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
 
-        if next_state <= 0.0 <= state:
-            frac = _cubic_hermite_root(
-                state, state, next_state, next_state, dt
-            )
+        _, y_next, _, vy_next = next_state
+        if y_next <= 0.0 <= y_curr:
+            frac = _cubic_hermite_root(y_curr, vy_curr, y_next, vy_next, dt)
             land_state = _cubic_hermite_interp(
                 state, k1, next_state, f(next_state), frac, dt
             )
-            land_state = 0.0
-            states.append(land_state)
+            x_land, _, vx_land, vy_land = land_state
+            states.append(np.array([x_land, 0.0, vx_land, vy_land], dtype=float))
             times.append(t + frac * dt)
             break
 
@@ -158,7 +157,8 @@ def simulate_ivp(
         return derivative(state, g, use_drag, k_drag)
 
     def hit_ground(t, state):
-        return state
+        _, y_val, _, _ = state
+        return y_val
 
     hit_ground.terminal = True
     hit_ground.direction = -1
@@ -173,20 +173,18 @@ def simulate_ivp(
         atol=1e-11,
     )
 
-    x = sol.y
-    y = np.maximum(0.0, sol.y)
-    vx = sol.y
-    vy = sol.y
+    x_arr, y_arr, vx_arr, vy_arr = sol.y
+    y_clean = np.maximum(0.0, y_arr)
 
-    impact_speed = float(np.hypot(vx[-1], vy[-1]))
-    impact_angle = float(np.degrees(np.arctan2(vy[-1], vx[-1])))
+    impact_speed = float(np.hypot(vx_arr[-1], vy_arr[-1]))
+    impact_angle = float(np.degrees(np.arctan2(vy_arr[-1], vx_arr[-1])))
 
     return {
-        "x": x,
-        "y": y,
+        "x": x_arr,
+        "y": y_clean,
         "time": float(sol.t[-1]),
-        "range": float(x[-1]),
-        "max_height": float(np.max(y)),
+        "range": float(x_arr[-1]),
+        "max_height": float(np.max(y_clean)),
         "impact_speed": impact_speed,
         "impact_angle": impact_angle,
     }
