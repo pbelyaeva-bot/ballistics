@@ -169,8 +169,8 @@ def simulate_ivp(
         y0=y0,
         method="RK45",
         events=hit_ground,
-        rtol=1e-9,
-        atol=1e-11,
+        rtol=1e-12,
+        atol=1e-13,
     )
 
     x_arr, y_arr, vx_arr, vy_arr = sol.y

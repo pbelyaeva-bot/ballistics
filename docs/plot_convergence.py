@@ -24,7 +24,7 @@ def main():
         v0=vac_params["v0"], angle=vac_params["angle"], h0=0.0, g=vac_params["g"]
     )["range"]
 
-    dts = np.array([0.2, 0.1, 0.05, 0.025, 0.0125, 0.00625])
+    dts = np.array([0.4, 0.2, 0.1, 0.05, 0.025])
     errors_drag = np.array([abs(simulate(**params, dt=dt)["range"] - ref_range) for dt in dts])
     errors_vac = np.array(
         [abs(simulate(**vac_params, dt=dt)["range"] - exact_vac_range) for dt in dts]
