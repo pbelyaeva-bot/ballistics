@@ -3,6 +3,25 @@ from scipy.integrate import solve_ivp
 from scipy.optimize import minimize_scalar
 
 
+def _validate_sim_params(v0, angle, h0, mass, cd, area, rho, g, dt=None, max_time=None):
+    if v0 <= 0.0:
+        raise ValueError("Начальная скорость v0 должна быть больше нуля.")
+    if not (0.0 <= angle <= 90.0):
+        raise ValueError("Угол броска должен лежать в диапазоне [0, 90] градусов.")
+    if h0 < 0.0:
+        raise ValueError("Начальная высота h0 не может быть отрицательной.")
+    if mass <= 0.0:
+        raise ValueError("Масса тела mass должна быть больше нуля.")
+    if g <= 0.0:
+        raise ValueError("Ускорение свободного падения g должно быть больше нуля.")
+    if cd < 0.0 or area < 0.0 or rho < 0.0:
+        raise ValueError("Параметры cd, area и rho не могут быть отрицательными.")
+    if dt is not None and dt <= 0.0:
+        raise ValueError("Шаг интегрирования dt должен быть больше нуля.")
+    if max_time is not None and max_time <= 0.0:
+        raise ValueError("Максимальное время расчёта max_time должно быть больше нуля.")
+
+
 def derivative(state, g, use_drag, k_drag):
     _, _, vx, vy = state
 
@@ -19,6 +38,9 @@ def derivative(state, g, use_drag, k_drag):
 
 def analytical_vacuum(v0, angle, h0=0.0, g=9.81):
     """Точное аналитическое решение для полёта в вакууме (Cd = 0)."""
+    if v0 <= 0.0 or g <= 0.0 or h0 < 0.0:
+        raise ValueError("Некорректные входные параметры для аналитического расчёта.")
+
     angle_rad = np.radians(angle)
     vx0 = v0 * np.cos(angle_rad)
     vy0 = v0 * np.sin(angle_rad)
@@ -41,12 +63,12 @@ def analytical_vacuum(v0, angle, h0=0.0, g=9.81):
     }
 
 
-def _cubic_hermite_root(y0, vy0, y1, vy1, dt):
-    """Находит долю шага s in (0, 1), где кубический сплайн Эрмита y(s) = 0 (точность O(dt^4))."""
+def _find_ground_fraction(y0, vy0, y1, vy1, dt):
+    """Ищет долю шага s in (0, 1) до пересечения y = 0 по кубическому многочлену Эрмита."""
     m0 = vy0 * dt
     m1 = vy1 * dt
 
-    def y_hermite(s):
+    def y_poly(s):
         h00 = 2.0 * s**3 - 3.0 * s**2 + 1.0
         h10 = s**3 - 2.0 * s**2 + s
         h01 = -2.0 * s**3 + 3.0 * s**2
@@ -56,16 +78,14 @@ def _cubic_hermite_root(y0, vy0, y1, vy1, dt):
     lo, hi = 0.0, 1.0
     for _ in range(40):
         mid = 0.5 * (lo + hi)
-        if y_hermite(mid) > 0.0:
+        if y_poly(mid) > 0.0:
             lo = mid
         else:
             hi = mid
     return 0.5 * (lo + hi)
 
 
-def _cubic_hermite_interp(s0, ds0, s1, ds1, frac, dt):
-    """Интерполирует вектор состояния на доле шага frac с 4-м порядком точности."""
-    s = frac
+def _interp_state(s0, ds0, s1, ds1, s, dt):
     h00 = 2.0 * s**3 - 3.0 * s**2 + 1.0
     h10 = s**3 - 2.0 * s**2 + s
     h01 = -2.0 * s**3 + 3.0 * s**2
@@ -77,39 +97,35 @@ def simulate(
     v0, angle, h0, mass, cd, area, rho, g, use_drag, dt=0.005, max_time=300.0
 ):
     """Численное интегрирование траектории методом Рунге-Кутты 4-го порядка (RK4)."""
+    _validate_sim_params(v0, angle, h0, mass, cd, area, rho, g, dt=dt, max_time=max_time)
+
     angle_rad = np.radians(angle)
     state = np.array(
         [0.0, h0, v0 * np.cos(angle_rad), v0 * np.sin(angle_rad)], dtype=float
     )
-
-    k_drag = 0.0
-    if use_drag and mass > 0.0:
-        k_drag = 0.5 * rho * cd * area / mass
+    k_drag = (0.5 * rho * cd * area / mass) if use_drag else 0.0
 
     t = 0.0
     states = [state.copy()]
     times = [0.0]
+    steps = int(np.ceil(max_time / dt))
 
-    for _ in range(int(max_time / dt)):
+    for _ in range(steps):
         _, y_curr, _, vy_curr = state
         if y_curr < 0.0:
             break
 
-        def f(s):
-            return derivative(s, g, use_drag, k_drag)
-
-        k1 = f(state)
-        k2 = f(state + 0.5 * dt * k1)
-        k3 = f(state + 0.5 * dt * k2)
-        k4 = f(state + dt * k3)
+        k1 = derivative(state, g, use_drag, k_drag)
+        k2 = derivative(state + 0.5 * dt * k1, g, use_drag, k_drag)
+        k3 = derivative(state + 0.5 * dt * k2, g, use_drag, k_drag)
+        k4 = derivative(state + dt * k3, g, use_drag, k_drag)
         next_state = state + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
 
         _, y_next, _, vy_next = next_state
         if y_next <= 0.0 <= y_curr:
-            frac = _cubic_hermite_root(y_curr, vy_curr, y_next, vy_next, dt)
-            land_state = _cubic_hermite_interp(
-                state, k1, next_state, f(next_state), frac, dt
-            )
+            frac = _find_ground_fraction(y_curr, vy_curr, y_next, vy_next, dt)
+            ds_next = derivative(next_state, g, use_drag, k_drag)
+            land_state = _interp_state(state, k1, next_state, ds_next, frac, dt)
             x_land, _, vx_land, vy_land = land_state
             states.append(np.array([x_land, 0.0, vx_land, vy_land], dtype=float))
             times.append(t + frac * dt)
@@ -144,21 +160,19 @@ def simulate_ivp(
     v0, angle, h0, mass, cd, area, rho, g, use_drag, max_time=300.0
 ):
     """Интегрирование через scipy.integrate.solve_ivp с событием касания земли."""
+    _validate_sim_params(v0, angle, h0, mass, cd, area, rho, g, max_time=max_time)
+
     angle_rad = np.radians(angle)
     y0 = np.array(
         [0.0, h0, v0 * np.cos(angle_rad), v0 * np.sin(angle_rad)], dtype=float
     )
-
-    k_drag = 0.0
-    if use_drag and mass > 0.0:
-        k_drag = 0.5 * rho * cd * area / mass
+    k_drag = (0.5 * rho * cd * area / mass) if use_drag else 0.0
 
     def rhs(t, state):
         return derivative(state, g, use_drag, k_drag)
 
     def hit_ground(t, state):
-        _, y_val, _, _ = state
-        return y_val
+        return state[1]
 
     hit_ground.terminal = True
     hit_ground.direction = -1
@@ -176,14 +190,27 @@ def simulate_ivp(
     x_arr, y_arr, vx_arr, vy_arr = sol.y
     y_clean = np.maximum(0.0, y_arr)
 
-    impact_speed = float(np.hypot(vx_arr[-1], vy_arr[-1]))
-    impact_angle = float(np.degrees(np.arctan2(vy_arr[-1], vx_arr[-1])))
+    if sol.t_events and len(sol.t_events[0]) > 0:
+        t_end = float(sol.t_events[0][-1])
+        x_end, _, vx_end, vy_end = sol.y_events[0][-1]
+        x_arr = x_arr.copy()
+        y_clean = y_clean.copy()
+        x_arr[-1] = x_end
+        y_clean[-1] = 0.0
+    else:
+        t_end = float(sol.t[-1])
+        x_end = float(x_arr[-1])
+        vx_end = float(vx_arr[-1])
+        vy_end = float(vy_arr[-1])
+
+    impact_speed = float(np.hypot(vx_end, vy_end))
+    impact_angle = float(np.degrees(np.arctan2(vy_end, vx_end)))
 
     return {
         "x": x_arr,
         "y": y_clean,
-        "time": float(sol.t[-1]),
-        "range": float(x_arr[-1]),
+        "time": t_end,
+        "range": float(x_end),
         "max_height": float(np.max(y_clean)),
         "impact_speed": impact_speed,
         "impact_angle": impact_angle,
@@ -194,14 +221,15 @@ def find_optimal_angle(
     v0,
     h0=0.0,
     mass=0.145,
-    cd=0.35,
+    cd=0.3392,
     area=0.0043,
     rho=1.225,
     g=9.81,
     use_drag=True,
     dt=0.01,
 ):
-    """Находит угол броска (в градусах), обеспечивающий максимальную дальность полёта."""
+    """Находит угол броска (в градусах), дающий максимальную дальность полёта."""
+    _validate_sim_params(v0, 45.0, h0, mass, cd, area, rho, g, dt=dt)
 
     def neg_range(angle_deg):
         res = simulate(

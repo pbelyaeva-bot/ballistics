@@ -83,3 +83,10 @@ def test_optimal_angle_vacuum_and_drag():
     drag = find_optimal_angle(v0=45.0, h0=0.0, cd=0.35, use_drag=True)
     assert 25.0 < drag["optimal_angle"] < 44.0
     assert drag["max_range"] < vac["max_range"]
+
+
+def test_invalid_parameters_raise():
+    with pytest.raises(ValueError):
+        simulate(v0=-10.0, angle=30.0, h0=1.0, mass=0.145, cd=0.35, area=0.0043, rho=1.225, g=9.81, use_drag=True)
+    with pytest.raises(ValueError):
+        simulate(v0=30.0, angle=30.0, h0=1.0, mass=0.0, cd=0.35, area=0.0043, rho=1.225, g=9.81, use_drag=True)

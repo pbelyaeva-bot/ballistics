@@ -10,13 +10,28 @@ from ballistics.statcast import (
 )
 
 
-def split_train_test(df: pd.DataFrame, train_ratio: float = 0.8) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Разделяет выборку на обучающую и тестовую части (по порядку матчей)."""
-    split_idx = int(len(df) * train_ratio)
-    if split_idx <= 0 or split_idx >= len(df):
+def split_train_test(
+    df: pd.DataFrame,
+    train_ratio: float = 0.8,
+    shuffle: bool = False,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Делит выборку на обучающую и тестовую части."""
+    if not (0.0 < train_ratio < 1.0):
+        raise ValueError("train_ratio должен быть в интервале (0, 1).")
+
+    work_df = (
+        df.sample(frac=1.0, random_state=random_state).reset_index(drop=True)
+        if shuffle
+        else df.reset_index(drop=True)
+    )
+
+    split_idx = int(len(work_df) * train_ratio)
+    if split_idx <= 0 or split_idx >= len(work_df):
         raise ValueError("Недостаточно данных для разделения на train и test.")
-    train_df = df.iloc[:split_idx].reset_index(drop=True)
-    test_df = df.iloc[split_idx:].reset_index(drop=True)
+
+    train_df = work_df.iloc[:split_idx].reset_index(drop=True)
+    test_df = work_df.iloc[split_idx:].reset_index(drop=True)
     return train_df, test_df
 
 
@@ -30,7 +45,6 @@ def predict_ranges(
     g: float = 9.81,
     dt: float = 0.01,
 ) -> np.ndarray:
-    """Рассчитывает предсказанную дальность полёта (в метрах) для каждого удара в таблице."""
     use_drag = cd > 0.0
     preds = np.empty(len(df), dtype=float)
 
@@ -53,7 +67,6 @@ def predict_ranges(
 
 
 def compute_error_metrics(actual_m: np.ndarray, predicted_m: np.ndarray) -> dict:
-    """Считает метрики ошибки предсказания дальности в метрах."""
     errors = predicted_m - actual_m
     mae = float(np.mean(np.abs(errors)))
     rmse = float(np.sqrt(np.mean(errors**2)))
@@ -103,9 +116,14 @@ def evaluate_models(
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
     fitted_cd: float,
+    h0: float = DEFAULT_HIT_HEIGHT_M,
+    mass: float = BASEBALL_MASS_KG,
+    area: float = BASEBALL_AREA_M2,
+    rho: float = 1.225,
+    g: float = 9.81,
     dt: float = 0.01,
 ) -> dict:
-    """Сравнивает вакуум, табличный Cd=0.47 и обученный Cd на отложенной тестовой выборке."""
+    """Сравнивает вакуум, гладкий шар (Cd=0.47) и подобранный Cd на тестовой выборке."""
     actual_test = test_df["distance_m"].to_numpy(dtype=float)
 
     models = {
@@ -116,7 +134,9 @@ def evaluate_models(
 
     evaluation = {}
     for name, cd_val in models.items():
-        preds = predict_ranges(test_df, cd=cd_val, dt=dt)
+        preds = predict_ranges(
+            test_df, cd=cd_val, h0=h0, mass=mass, area=area, rho=rho, g=g, dt=dt
+        )
         evaluation[name] = {
             "cd": cd_val,
             "predictions": preds,

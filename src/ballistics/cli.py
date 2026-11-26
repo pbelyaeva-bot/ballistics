@@ -1,4 +1,5 @@
 import argparse
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -29,13 +30,21 @@ def cmd_fetch(args):
 
 
 def cmd_fit(args):
-    df = pd.read_csv(args.data)
-    train_df, test_df = split_train_test(df, train_ratio=args.train_ratio)
-    fit_res = fit_cd(train_df)
+    data_path = Path(args.data)
+    if not data_path.exists():
+        raise FileNotFoundError(
+            f"Файл {data_path} не найден. Сначала выполните: ballistics fetch --start ... --end ..."
+        )
+
+    df = pd.read_csv(data_path)
+    train_df, test_df = split_train_test(
+        df, train_ratio=args.train_ratio, shuffle=args.shuffle
+    )
+    fit_res = fit_cd(train_df, dt=args.dt)
     best_cd = fit_res["cd"]
 
     print(f"Подобранный коэффициент Cd = {best_cd:.4f} (train={len(train_df)}, test={len(test_df)})")
-    eval_res = evaluate_models(train_df, test_df, fitted_cd=best_cd)
+    eval_res = evaluate_models(train_df, test_df, fitted_cd=best_cd, dt=args.dt)
 
     print(f"\n{'Модель':<28} | {'MAE, м':>8} | {'RMSE, м':>8} | {'Bias, м':>9}")
     print("-" * 62)
@@ -44,18 +53,32 @@ def cmd_fit(args):
 
 
 def cmd_simulate(args):
-    fn = simulate_ivp if args.solver == "ivp" else simulate
-    res = fn(
-        v0=args.v0,
-        angle=args.angle,
-        h0=args.h0,
-        mass=args.mass,
-        cd=args.cd,
-        area=args.area,
-        rho=args.rho,
-        g=args.g,
-        use_drag=not args.vacuum,
-    )
+    if args.solver == "ivp":
+        res = simulate_ivp(
+            v0=args.v0,
+            angle=args.angle,
+            h0=args.h0,
+            mass=args.mass,
+            cd=args.cd,
+            area=args.area,
+            rho=args.rho,
+            g=args.g,
+            use_drag=not args.vacuum,
+        )
+    else:
+        res = simulate(
+            v0=args.v0,
+            angle=args.angle,
+            h0=args.h0,
+            mass=args.mass,
+            cd=args.cd,
+            area=args.area,
+            rho=args.rho,
+            g=args.g,
+            use_drag=not args.vacuum,
+            dt=args.dt,
+        )
+
     mode = "вакуум" if args.vacuum else f"с сопротивлением (Cd={args.cd})"
     print(f"Расчёт ({args.solver}, {mode}):")
     print(f"  Дальность:          {res['range']:.2f} м")
@@ -75,6 +98,7 @@ def cmd_optimal_angle(args):
         rho=args.rho,
         g=args.g,
         use_drag=not args.vacuum,
+        dt=args.dt,
     )
     mode = "вакуум" if args.vacuum else f"Cd={args.cd}"
     print(f"Оптимальный угол броска ({mode}, v0={args.v0} м/с):")
@@ -89,7 +113,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # 1. fetch
     p_fetch = sub.add_parser("fetch", help="Скачать и очистить данные флай-болов Statcast")
     p_fetch.add_argument("--start", required=True, help="Дата начала YYYY-MM-DD")
     p_fetch.add_argument("--end", required=True, help="Дата окончания YYYY-MM-DD")
@@ -97,36 +120,37 @@ def build_parser() -> argparse.ArgumentParser:
     p_fetch.add_argument("--out", default="data/fly_balls_clean.csv", help="Путь для очищенного CSV")
     p_fetch.set_defaults(func=cmd_fetch)
 
-    # 2. fit
     p_fit = sub.add_parser("fit", help="Подобрать Cd по данным и оценить ошибку на тесте")
     p_fit.add_argument("--data", default="data/fly_balls_clean.csv", help="Путь к очищенному CSV")
     p_fit.add_argument("--train-ratio", type=float, default=0.8, help="Доля обучающей выборки")
+    p_fit.add_argument("--shuffle", action="store_true", help="Перемешать выборку перед разбиением")
+    p_fit.add_argument("--dt", type=float, default=0.01, help="Шаг интегрирования, с")
     p_fit.set_defaults(func=cmd_fit)
 
-    # 3. simulate
     p_sim = sub.add_parser("simulate", help="Рассчитать траекторию одного броска")
     p_sim.add_argument("--v0", type=float, required=True, help="Начальная скорость, м/с")
     p_sim.add_argument("--angle", type=float, required=True, help="Угол броска, градусы")
     p_sim.add_argument("--h0", type=float, default=DEFAULT_HIT_HEIGHT_M, help="Начальная высота, м")
     p_sim.add_argument("--mass", type=float, default=BASEBALL_MASS_KG, help="Масса, кг")
-    p_sim.add_argument("--cd", type=float, default=0.35, help="Коэффициент сопротивления Cd")
+    p_sim.add_argument("--cd", type=float, default=0.3392, help="Коэффициент сопротивления Cd")
     p_sim.add_argument("--area", type=float, default=BASEBALL_AREA_M2, help="Площадь сечения, м²")
     p_sim.add_argument("--rho", type=float, default=1.225, help="Плотность воздуха, кг/м³")
     p_sim.add_argument("--g", type=float, default=9.81, help="Ускорение свободного падения, м/с²")
     p_sim.add_argument("--vacuum", action="store_true", help="Считать без сопротивления воздуха")
     p_sim.add_argument("--solver", choices=["rk4", "ivp"], default="rk4", help="Метод интегрирования")
+    p_sim.add_argument("--dt", type=float, default=0.005, help="Шаг интегрирования для rk4, с")
     p_sim.set_defaults(func=cmd_simulate)
 
-    # 4. optimal-angle
     p_opt = sub.add_parser("optimal-angle", help="Найти угол максимальной дальности")
     p_opt.add_argument("--v0", type=float, required=True, help="Начальная скорость, м/с")
     p_opt.add_argument("--h0", type=float, default=0.0, help="Начальная высота, м")
     p_opt.add_argument("--mass", type=float, default=BASEBALL_MASS_KG, help="Масса, кг")
-    p_opt.add_argument("--cd", type=float, default=0.35, help="Коэффициент сопротивления Cd")
+    p_opt.add_argument("--cd", type=float, default=0.3392, help="Коэффициент сопротивления Cd")
     p_opt.add_argument("--area", type=float, default=BASEBALL_AREA_M2, help="Площадь сечения, м²")
     p_opt.add_argument("--rho", type=float, default=1.225, help="Плотность воздуха, кг/м³")
     p_opt.add_argument("--g", type=float, default=9.81, help="Ускорение свободного падения, м/с²")
     p_opt.add_argument("--vacuum", action="store_true", help="Считать без сопротивления воздуха")
+    p_opt.add_argument("--dt", type=float, default=0.01, help="Шаг интегрирования, с")
     p_opt.set_defaults(func=cmd_optimal_angle)
 
     return parser
@@ -135,7 +159,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main():
     parser = build_parser()
     args = parser.parse_args()
-    args.func(args)
+    try:
+        args.func(args)
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"Ошибка: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

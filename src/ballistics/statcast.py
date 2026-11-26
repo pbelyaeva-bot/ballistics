@@ -1,20 +1,21 @@
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
-from pybaseball import statcast
 
-# Константы перевода в СИ
-MPH_TO_MS = 0.44704  # 1 миля в час = 0.44704 м/с
-FT_TO_M = 0.3048  # 1 фут = 0.3048 м
+MPH_TO_MS = 0.44704
+FT_TO_M = 0.3048
 
-# Физические параметры стандартного бейсбольного мяча (MLB)
+# Параметры стандартного бейсбольного мяча MLB (масса ~145 г, радиус ~3.7 см)
 BASEBALL_MASS_KG = 0.145
 BASEBALL_RADIUS_M = 0.037
-BASEBALL_AREA_M2 = 3.141592653589793 * (BASEBALL_RADIUS_M**2)  # ~0.0043 м²
-DEFAULT_HIT_HEIGHT_M = 1.0  # средняя высота точки удара битой (зона страйка)
+BASEBALL_AREA_M2 = float(np.pi * (BASEBALL_RADIUS_M**2))
+DEFAULT_HIT_HEIGHT_M = 1.0  # средняя высота точки удара в зоне страйка
 
 
 def fetch_statcast_data(start_dt: str, end_dt: str, save_path: str | None = None) -> pd.DataFrame:
+    from pybaseball import statcast
+
     df = statcast(start_dt=start_dt, end_dt=end_dt)
 
     if save_path is not None:
@@ -51,12 +52,13 @@ def inspect_columns(df: pd.DataFrame) -> dict:
     for col in ["launch_speed", "launch_angle", "hit_distance_sc"]:
         if col in df.columns:
             series = pd.to_numeric(df[col], errors="coerce").dropna()
-            report["summary"][col] = {
-                "count": int(series.count()),
-                "min": float(series.min()),
-                "median": float(series.median()),
-                "max": float(series.max()),
-            }
+            if not series.empty:
+                report["summary"][col] = {
+                    "count": int(series.count()),
+                    "min": float(series.min()),
+                    "median": float(series.median()),
+                    "max": float(series.max()),
+                }
 
     return report
 
@@ -67,17 +69,13 @@ def prepare_fly_balls(df: pd.DataFrame) -> pd.DataFrame:
         if col not in df.columns:
             raise ValueError(f"В таблице отсутствует обязательный столбец: {col}")
 
-    clean = df.copy()
+    clean = df[df["bb_type"] == "fly_ball"].copy()
 
-    # Оставляем только флай-болы (ground_ball катятся по траве, popup/line_drive имеют иную динамику)
-    clean = clean[clean["bb_type"] == "fly_ball"].copy()
-
-    # Приводим к числам и удаляем строки с пропусками
     for col in ["launch_speed", "launch_angle", "hit_distance_sc"]:
         clean[col] = pd.to_numeric(clean[col], errors="coerce")
     clean = clean.dropna(subset=["launch_speed", "launch_angle", "hit_distance_sc"])
 
-    # Фильтруем физически некорректные выбросы и отрицательные углы вылета
+    # Отсекаем заведомо ошибочные замеры радара и нефизичные углы
     clean = clean[
         (clean["launch_speed"] > 30.0)
         & (clean["launch_angle"] > 5.0)
@@ -85,7 +83,6 @@ def prepare_fly_balls(df: pd.DataFrame) -> pd.DataFrame:
         & (clean["hit_distance_sc"] > 30.0)
     ].copy()
 
-    # Перевод в единицы СИ
     clean["v0_ms"] = clean["launch_speed"] * MPH_TO_MS
     clean["angle_deg"] = clean["launch_angle"]
     clean["distance_m"] = clean["hit_distance_sc"] * FT_TO_M

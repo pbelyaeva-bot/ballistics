@@ -5,7 +5,23 @@ from matplotlib.animation import FuncAnimation
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
-from ballistics.physics import simulate
+from ballistics.physics import simulate, simulate_ivp
+from ballistics.statcast import (
+    BASEBALL_AREA_M2,
+    BASEBALL_MASS_KG,
+    DEFAULT_HIT_HEIGHT_M,
+)
+
+BASEBALL_PRESET = {
+    "v0": "45.0",
+    "angle": "28.0",
+    "h0": f"{DEFAULT_HIT_HEIGHT_M:.1f}",
+    "g": "9.81",
+    "mass": f"{BASEBALL_MASS_KG:.3f}",
+    "cd": "0.3392",
+    "area": f"{BASEBALL_AREA_M2:.6f}",
+    "rho": "1.225",
+}
 
 
 class BallisticCalculatorApp:
@@ -29,14 +45,14 @@ class BallisticCalculatorApp:
         control_frame.pack(fill=tk.X)
 
         self.params = [
-            ("Начальная скорость, м/с", "v0", "50"),
-            ("Угол броска, градусы", "angle", "45"),
-            ("Начальная высота, м", "h0", "0"),
-            ("g, м/с²", "g", "9.81"),
-            ("Масса, кг", "mass", "1.0"),
-            ("Коэффициент Cd", "cd", "0.47"),
-            ("Площадь сечения, м²", "area", "0.01"),
-            ("Плотность воздуха, кг/м³", "rho", "1.225"),
+            ("Начальная скорость, м/с", "v0", BASEBALL_PRESET["v0"]),
+            ("Угол броска, градусы", "angle", BASEBALL_PRESET["angle"]),
+            ("Начальная высота, м", "h0", BASEBALL_PRESET["h0"]),
+            ("g, м/с²", "g", BASEBALL_PRESET["g"]),
+            ("Масса, кг", "mass", BASEBALL_PRESET["mass"]),
+            ("Коэффициент Cd", "cd", BASEBALL_PRESET["cd"]),
+            ("Площадь сечения, м²", "area", BASEBALL_PRESET["area"]),
+            ("Плотность воздуха, кг/м³", "rho", BASEBALL_PRESET["rho"]),
         ]
 
         for i, (label_text, key, default_value) in enumerate(self.params):
@@ -59,11 +75,31 @@ class BallisticCalculatorApp:
         self.drag_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             control_frame, text="Учитывать сопротивление воздуха", variable=self.drag_var
-        ).grid(row=2, column=0, columnspan=4, sticky="w", padx=5, pady=8)
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=8)
+
+        ttk.Label(control_frame, text="Солвер:").grid(row=2, column=2, sticky="e", padx=5, pady=8)
+        self.solver_var = tk.StringVar(value="rk4")
+        solver_box = ttk.Combobox(
+            control_frame,
+            textvariable=self.solver_var,
+            values=["rk4", "ivp"],
+            state="readonly",
+            width=8,
+        )
+        solver_box.grid(row=2, column=3, sticky="w", padx=5, pady=8)
+
+        ttk.Button(
+            control_frame, text="Пресет: бейсбол", command=self.apply_baseball_preset
+        ).grid(row=2, column=4, columnspan=2, sticky="ew", padx=5, pady=8)
 
         ttk.Button(
             control_frame, text="Рассчитать и анимировать", command=self.run_calculation
-        ).grid(row=2, column=4, columnspan=4, sticky="ew", padx=5, pady=8)
+        ).grid(row=2, column=6, columnspan=2, sticky="ew", padx=5, pady=8)
+
+    def apply_baseball_preset(self):
+        for key, val in BASEBALL_PRESET.items():
+            self.vars[key].set(val)
+        self.drag_var.set(True)
 
     def create_results(self):
         self.results_text = tk.Text(
@@ -125,13 +161,15 @@ class BallisticCalculatorApp:
             return
 
         use_drag = self.drag_var.get()
+        solver_name = self.solver_var.get()
+        solver_fn = simulate_ivp if solver_name == "ivp" else simulate
         self.stop_animation()
 
-        current = simulate(use_drag=use_drag, **values)
-        vacuum = current if not use_drag else simulate(use_drag=False, **values)
+        current = solver_fn(use_drag=use_drag, **values)
+        vacuum = current if not use_drag else solver_fn(use_drag=False, **values)
 
         self.draw_plot(vacuum, current, use_drag)
-        self.show_results(vacuum, current, use_drag)
+        self.show_results(vacuum, current, use_drag, solver_name)
 
     def draw_plot(self, vacuum, current, use_drag):
         self.ax.clear()
@@ -184,13 +222,13 @@ class BallisticCalculatorApp:
         self.traj_line.set_data(data["x"][: i + 1], data["y"][: i + 1])
         self.point.set_data([data["x"][i]], [data["y"][i]])
 
-    def show_results(self, vacuum, current, use_drag):
+    def show_results(self, vacuum, current, use_drag, solver_name):
         self.results_text.config(state="normal")
         self.results_text.delete("1.0", tk.END)
 
         mode = "с сопротивлением воздуха" if use_drag else "без сопротивления воздуха"
         lines = [
-            f"Режим: {mode}",
+            f"Режим: {mode} (метод: {solver_name})",
             "",
             f"Время полёта: {current['time']:.3f} с",
             f"Дальность: {current['range']:.3f} м",
